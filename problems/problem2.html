@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>CPSC 487/587</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.3.0/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quaternion@1.5.1/quaternion.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric-1.2.6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {get_default_lil_gui, ThreeEngine, refresh_displays, z_up_set_object_rotation_from_quaternion} from "../js/utils/utils_three.js";
+    import {mul_matrix_matrix} from "../../js/utils/utils_math.js";
+
+    // done: create a visualization that demonstrates your knowledge of quaternions.  This is intentionally
+    // done: open-ended.  Be as creative as you want, or feel free to recreate any of the visualizations
+    // done: found in Section 3.3.
+
+    // create 3D Engine
+    let engine = ThreeEngine.new_default_3d();
+
+    // set up gui actions
+    let settings = {
+        mesh_visible: false,
+        wireframe_visible: true,
+        t: 0,          
+        theta: 0,    
+        phi: 0,        
+        r: 1           
+    };
+    
+    let actions = {
+        reset_rotation: function() {
+            settings.t = 0;
+            settings.theta = 0;
+            settings.phi = 0;
+            settings.r = 1;
+            refresh_displays(gui);
+        }
+    };
+
+    // create gui
+    let gui = get_default_lil_gui();
+    gui.add(settings, 'theta', -Math.PI, Math.PI).name('theta');
+    gui.add(settings, 'phi', -Math.PI, Math.PI).name('phi');
+    gui.add(settings, 'r', -2*Math.PI, 2*Math.PI).name('r');
+    gui.add(settings, 't', 0, 1).name('t');
+    gui.add(actions, 'reset_rotation').name('Reset Rotation');
+
+    // create suzanne monkey
+    engine.add_suzanne_monkey_as_mesh_object(0x00eeff);
+    
+    // original position
+    let standard_points = engine.get_local_vertex_positions_of_mesh_object(0);
+    let wireframe_points = engine.get_local_vertex_positions_of_mesh_object_wireframe(0);
+
+    // hamilton product helper function
+    function hamilton_product(q1, q2) {
+        let w1 = q1[0], x1 = q1[1], y1 = q1[2], z1 = q1[3];
+        let w2 = q2[0], x2 = q2[1], y2 = q2[2], z2 = q2[3];
+
+        return [
+            w1*w2 - x1*x2 - y1*y2 - z1*z2,
+            w1*x2 + x1*w2 + y1*z2 - z1*y2,
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,
+            w1*z2 + x1*y2 - y1*x2 + z1*w2
+        ];
+    }
+
+    engine.animation_loop(() => {
+        let t = settings.t * 2 * Math.PI;
+        let theta = settings.theta;
+        let phi = settings.phi;
+        let r = settings.r;
+
+        // find rotation axis
+        let vx = r * Math.sin(phi) * Math.cos(theta);
+        let vy = r * Math.sin(phi) * Math.sin(theta);
+        let vz = r * Math.cos(phi);
+
+        let v = [[vx], [vy], [vz]];
+        
+        // draw vector
+        engine.draw_debug_vector([[0],[0],[0]], v, 0.02, 0.1);
+
+        // normalize rotation vector
+        let length = Math.sqrt(vx*vx + vy*vy + vz*vz);
+        let ux = 1
+        let uy = 0
+        let uz = 0;
+
+        if (length > 0.0001) {
+            ux = vx / length;
+            uy = vy / length;
+            uz = vz / length;
+        }
+
+        // set up quaternion and inverse
+        let w = Math.cos(t / 2);
+        let x = ux * Math.sin(t / 2);
+        let y = uy * Math.sin(t / 2);
+        let z = uz * Math.sin(t / 2);
+
+        let q = [w, x, y, z];
+        let q_inv = [w, -x, -y, -z];
+
+        // calcualte quaternion rotation 
+        //(P' = q * P * q^-1)
+        function apply_quaternion(vertex) {
+            let p = [0, vertex[0][0], vertex[1][0], vertex[2][0]];
+            
+            // hamiltonian products q * p * q^-1
+            let qp = hamilton_product(q, p);
+            let p_prime = hamilton_product(qp, q_inv);
+            
+            return [[p_prime[1]], [p_prime[2]], [p_prime[3]]];
+        }
+
+        // quaternion rotation to all vertices
+        let new_standard_points = standard_points.map(apply_quaternion);
+        let new_wireframe_points = wireframe_points.map(apply_quaternion);
+        
+        // make wireframe visible
+        engine.mesh_objects[0].visible = settings.mesh_visible;
+        engine.set_mesh_object_wireframe_visibility(0, settings.wireframe_visible);
+
+        // update
+        engine.update_vertex_positions_of_mesh_object(0, new_standard_points);
+        engine.update_vertex_positions_of_mesh_object_wireframe(0, new_wireframe_points);
+
+        refresh_displays(gui);
+});
+
+    
+
+</script>
+</body>
+</html>
